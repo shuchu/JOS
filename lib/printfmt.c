@@ -9,6 +9,16 @@
 #include <inc/error.h>
 
 /*
+* Color printf
+*/
+#define COLOR_WHT  7
+#define COLOR_BLK  1
+#define COLOR_GRN  2
+#define COLOR_RED  4
+
+int ch_color = 7;
+
+/*
  * Space or zero padding and a field width are supported for the numeric
  * formats only.
  *
@@ -159,6 +169,25 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 		case 'c':
 			putch(va_arg(ap, int), putdat);
 			break;
+        
+        // color:
+        case 'C': {
+            char sel_c[4];
+            memmove(sel_c, fmt, sizeof(unsigned char)*3);
+            sel_c[3]='\0';
+            fmt += 3;
+            if (sel_c[0] >= '0' && sel_c[0] <= '9'){
+                //JOS does not have atoi
+                ch_color = ((sel_c[0]-'0')*10 + sel_c[1]-'0')*10+sel_c[2]-'0';
+            }else{
+                if (strcmp(sel_c, "WHT") == 0) ch_color = COLOR_WHT; else
+                if (strcmp(sel_c, "RED") == 0) ch_color = COLOR_RED; else
+                if (strcmp(sel_c, "GRN") == 0) ch_color = COLOR_GRN; else
+                if (strcmp(sel_c, "BLK") == 0) ch_color = COLOR_BLK; else
+                ch_color=COLOR_WHT;
+            }
+            break;
+            }
 
 		// error message
 		case 'e':
@@ -207,7 +236,7 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 		case 'o':
 			num = getuint(&ap, lflag);
 			base = 8;
-      goto number;
+                        goto number;
 			// Replace this with your code.
 			//putch('X', putdat);
 			//putch('X', putdat);
