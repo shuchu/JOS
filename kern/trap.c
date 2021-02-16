@@ -77,7 +77,7 @@ trap_init(void)
         extern void rt_tss();
         extern void rt_segnp();
         extern void rt_stack();
-        extern void rt_gpflp();
+        extern void rt_gpflt();
         extern void rt_pgflt();
         extern void rt_fperr();
         extern void rt_align();
@@ -88,23 +88,23 @@ trap_init(void)
 
         SETGATE(idt[T_DIVIDE], true, GD_KT, rt_divide, 0);
         SETGATE(idt[T_DEBUG], true, GD_KT, rt_debug, 0);
-        SETGATE(idt[T_NMI], false, GD_KT, rt_divide, 0);  // an interrupt
-        SETGATE(idt[T_BRKPT], true, GD_KT, rt_divide, 3);
-        SETGATE(idt[T_OFLOW], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_BOUND], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_ILLOP], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_DEVICE], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_DBLFLT], false, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_TSS], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_SEGNP], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_STACK], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_GPFLT], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_PGFLT], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_FPERR], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_ALIGN], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_MCHK], false, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_SIMDERR], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_SYSCALL], true, GD_KT, rt_divide, 3);
+        SETGATE(idt[T_NMI], false, GD_KT, rt_nmi, 0);  // an interrupt
+        SETGATE(idt[T_BRKPT], true, GD_KT, rt_brkpt, 3);
+        SETGATE(idt[T_OFLOW], true, GD_KT, rt_oflow, 0);
+        SETGATE(idt[T_BOUND], true, GD_KT, rt_bound, 0);
+        SETGATE(idt[T_ILLOP], true, GD_KT, rt_illop, 0);
+        SETGATE(idt[T_DEVICE], true, GD_KT, rt_device, 0);
+        SETGATE(idt[T_DBLFLT], false, GD_KT, rt_dblflt, 0);
+        SETGATE(idt[T_TSS], true, GD_KT, rt_tss, 0);
+        SETGATE(idt[T_SEGNP], true, GD_KT, rt_segnp, 0);
+        SETGATE(idt[T_STACK], true, GD_KT, rt_stack, 0);
+        SETGATE(idt[T_GPFLT], true, GD_KT, rt_gpflt, 0);
+        SETGATE(idt[T_PGFLT], true, GD_KT, rt_pgflt, 0);
+        SETGATE(idt[T_FPERR], true, GD_KT, rt_fperr, 0);
+        SETGATE(idt[T_ALIGN], true, GD_KT, rt_align, 0);
+        SETGATE(idt[T_MCHK], false, GD_KT, rt_mchk, 0);
+        SETGATE(idt[T_SIMDERR], true, GD_KT, rt_simderr, 0);
+        SETGATE(idt[T_SYSCALL], true, GD_KT, rt_syscall, 3);
 
 	// Per-CPU setup 
 	trap_init_percpu();
@@ -184,6 +184,28 @@ trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
+        if (tf->tf_trapno == T_PGFLT) {
+            page_fault_handler(tf);
+            return;
+        } else if (tf->tf_trapno == T_BRKPT) {
+            monitor(tf);
+            return;
+        } else if (tf->tf_trapno == T_SYSCALL) {
+            int32_t result = syscall(
+                                tf->tf_regs.reg_eax,
+                                tf->tf_regs.reg_edx,
+                                tf->tf_regs.reg_ecx,
+                                tf->tf_regs.reg_ebx,
+                                tf->tf_regs.reg_edi,
+                                tf->tf_regs.reg_esi);
+            if (result < 0) {
+                panic("trao dispatch, the system call number is invalid.");
+            }
+
+            tf->tf_regs.reg_eax = result;
+            return;
+        }
+
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
@@ -245,6 +267,9 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
+        if ((tf->tf_cs & 3) == 0) {
+            panic("Kernel page fault at :%x", fault_va);
+        }
 
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.

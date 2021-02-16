@@ -594,6 +594,15 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
+        char* addr = (char*) va;
+        for (char* s = addr; s < addr+len; s = ROUNDDOWN(s+PGSIZE, PGSIZE)) {
+            pte_t* pte = NULL;
+            struct PageInfo *pg_info = page_lookup(env->env_pgdir, (void*) s, &pte);
+            if (!pg_info || ((*pte & perm) != perm) || (uintptr_t) s > ULIM) {
+                user_mem_check_addr = (uintptr_t) s;
+                return -E_FAULT;
+            }
+        }
 
 	return 0;
 }
