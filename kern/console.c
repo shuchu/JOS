@@ -10,6 +10,10 @@
 #include <kern/trap.h>
 #include <kern/picirq.h>
 
+// For color pirntf
+extern int ch_color;
+
+
 static void cons_intr(int (*proc)(void));
 static void cons_putc(int c);
 
@@ -164,6 +168,8 @@ cga_init(void)
 static void
 cga_putc(int c)
 {
+    c = c + (ch_color << 8);
+
 	// if no attribute given, then use black on white
 	if (!(c & ~0xFF))
 		c |= 0x0700;

@@ -25,6 +25,7 @@ struct Command {
 static struct Command commands[] = {
 	{ "help", "Display this list of commands", mon_help },
 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
+	{ "backtrace", "Backtrace the memory information about current stack", mon_backtrace },
 };
 
 /***** Implementations of basic kernel monitor commands *****/
@@ -59,6 +60,35 @@ int
 mon_backtrace(int argc, char **argv, struct Trapframe *tf)
 {
 	// Your code here.
+        // Define variable
+        uint32_t arg0, arg1, arg2, arg3, arg4;
+        uint32_t *eip;
+
+        // Obtain the current ebp
+        uint32_t *curr_ebp = (uint32_t*) read_ebp();
+
+        eip = (uint32_t*) curr_ebp[1];
+        arg0 = curr_ebp[2];
+        arg1 = curr_ebp[3];
+        arg2 = curr_ebp[4];
+        arg3 = curr_ebp[5];
+        arg4 = curr_ebp[6];
+        
+        cprintf("Stack backtracesa:\n");
+        while (curr_ebp != 0) {
+            cprintf("  ebp %08x  eip %08x  args %08x %08x %08x %08x %08x\n", curr_ebp, eip, arg0, arg1, arg2, arg3, arg4);
+            // Check file name, line info, and the offset
+            struct Eipdebuginfo eip_info;
+            debuginfo_eip( (uintptr_t) eip, &eip_info);
+            cprintf("  %s:%d: %.*s+%d\n", eip_info.eip_file, eip_info.eip_line, eip_info.eip_fn_namelen, eip_info.eip_fn_name, (uintptr_t) eip - eip_info.eip_fn_addr);
+            curr_ebp = (uint32_t*) curr_ebp[0];
+            eip = (uint32_t*) curr_ebp[1];
+            arg0 = curr_ebp[2];
+            arg1 = curr_ebp[3];
+            arg2 = curr_ebp[4];
+            arg3 = curr_ebp[5];
+            arg4 = curr_ebp[6];
+        }
 	return 0;
 }
 
@@ -113,8 +143,8 @@ monitor(struct Trapframe *tf)
 {
 	char *buf;
 
-	cprintf("Welcome to the JOS kernel monitor!\n");
-	cprintf("Type 'help' for a list of commands.\n");
+	cprintf("%CREDWelcome %CWHTto the %CGRNJOS %CWHTkernel monitor!\n");
+	cprintf("Type '%C142help' %CWHTfor a list of commands.\n");
 
 	if (tf != NULL)
 		print_trapframe(tf);
