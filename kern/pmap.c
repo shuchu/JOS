@@ -291,6 +291,15 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
+        int i = 0;
+        for (i = 0; i < NCPU; i++){
+            uintptr_t kstacktop = KSTACKTOP - i * (KSTKSIZE + KSTKGAP);
+            boot_map_region(kern_pgdir,
+                            kstacktop - KSTKSIZE,
+                            KSTKSIZE,
+                            PADDR(percpu_kstacks[i]),
+                            PTE_W);
+        }
 
 }
 
@@ -312,6 +321,11 @@ page_init(void)
 	// LAB 4:
 	// Change your code to mark the physical page at MPENTRY_PADDR
 	// as in use
+        //extern unsigned char mpentry_start[], mpentry_end[];
+        //assert((uintptr_t)(mpentry_end - mpentry_start) <= PGSIZE);
+
+        struct PageInfo *mpentry_pg = pa2page(MPENTRY_PADDR);
+        mpentry_pg->pp_ref = 1;
 
 	// The example code here marks all physical pages as free.
 	// However this is not truly the case.  What memory is free?
@@ -336,6 +350,9 @@ page_init(void)
         pages[0].pp_link = NULL;
 
 	for (i = 1; i < npages_basemem; i++) {
+            if (pages[i].pp_ref == 1) {
+                continue;
+            }
 	    pages[i].pp_ref = 0;
 	    pages[i].pp_link = page_free_list;
             page_free_list = &pages[i];
@@ -636,7 +653,22 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	//panic("mmio_map_region not implemented");
+
+        size_t rd_size = ROUNDUP(size, PGSIZE);
+
+        if (base + rd_size > MMIOLIM) {
+            panic("allocate memory for mmio expect overflow over MMIOLIM.");
+        }
+
+        boot_map_region(kern_pgdir, base, rd_size, pa, PTE_PCD | PTE_PWT | PTE_W);
+
+        void * start_base = (void *) base;
+
+        base += rd_size;
+
+        return start_base;
+
 }
 
 static uintptr_t user_mem_check_addr;

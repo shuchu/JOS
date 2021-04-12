@@ -540,7 +540,7 @@ env_run(struct Env *e)
 
 	// LAB 3: Your code here.
         
-        if (curenv != NULL) {
+        if (curenv != NULL && curenv->env_status == ENV_RUNNING) {
             curenv->env_status = ENV_RUNNABLE;
         }
 
@@ -548,7 +548,8 @@ env_run(struct Env *e)
         curenv->env_status = ENV_RUNNING;
         curenv->env_runs++;
         lcr3(PADDR(curenv->env_pgdir));
-
+        
+        unlock_kernel();
         env_pop_tf(&curenv->env_tf);
         panic("Error, env_pop_tf got panic.");
 }
