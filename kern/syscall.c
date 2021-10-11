@@ -116,13 +116,13 @@ sys_env_set_status(envid_t envid, int status)
 	// envid's status.
 
 	// LAB 4: Your code here.
-        struct Env *e = NULL;
-        int err = envid2env(envid, &e, true);
-        if (err < 0) {
-            return err;
-        } else if (status != ENV_RUNNABLE && status != ENV_NOT_RUNNABLE) {
+        struct Env *e;
+        if (status != ENV_RUNNABLE && status != ENV_NOT_RUNNABLE) 
             return -E_INVAL;
-        }
+
+        int err = envid2env(envid, &e, true);
+        if (err < 0) 
+            return err;
 
         e->env_status = status;
         return 0;
@@ -176,7 +176,7 @@ sys_page_alloc(envid_t envid, void *va, int perm)
 	//   allocated!
 
 	// LAB 4: Your code here.
-        struct Env  *e = NULL;
+        struct Env  *e;
         int err = envid2env(envid, &e, 1);
 
         if (err < 0) {
@@ -184,9 +184,12 @@ sys_page_alloc(envid_t envid, void *va, int perm)
             return -E_BAD_ENV;
         }
 
-        if (va >= (void *) UTOP || (uintptr_t)va % PGSIZE != 0) {
+        if ( (uintptr_t)va >= UTOP || PGOFF(va)) {
             return -E_INVAL;
         }
+
+        if ((perm & PTE_U)==0 || (perm & PTE_P)==0)
+            return -E_INVAL;
         
         if ((perm & ~PTE_SYSCALL) != 0) {
             return -E_INVAL;
@@ -197,13 +200,13 @@ sys_page_alloc(envid_t envid, void *va, int perm)
             return -E_NO_MEM;
         }
 
-        if ((err = page_insert(e->env_pgdir, p, va, perm | PTE_U | PTE_P)) < 0) {
+        if ((err = page_insert(e->env_pgdir, p, va, perm)) < 0) {
             page_free(p);
             return err;
         }
         
         // clean the content of assigned page
-        memset(page2kva(p), 0, PGSIZE);
+        //memset(page2kva(p), 0, PGSIZE);
 
         return 0;
 
@@ -237,24 +240,24 @@ sys_page_map(envid_t srcenvid, void *srcva,
 	//   check the current permissions on the page.
 
 	// LAB 4: Your code here.
-        if (srcva >= (void *)UTOP || ROUNDUP (srcva, PGSIZE) != srcva  ||
-            dstva >= (void *)UTOP || ROUNDUP (dstva, PGSIZE) != dstva)
+        if ((uintptr_t)srcva >= UTOP || PGOFF(srcva)||
+            (uintptr_t)dstva >= UTOP || PGOFF(dstva))
             return -E_INVAL;
 
-        if ((perm & ~PTE_SYSCALL) != 0) 
+        if ((perm & PTE_U) == 0 || (perm & PTE_P) == 0 || (perm & ~PTE_SYSCALL) != 0) 
             return -E_INVAL;
 
-        struct Env *s_env = NULL;
+        struct Env *s_env;
         if (envid2env(srcenvid, &s_env, 1) < 0)
             return -E_BAD_ENV;
 
-        struct Env *d_env = NULL;
+        struct Env *d_env;
         if (envid2env(dstenvid, &d_env, 1) < 0)
             return -E_BAD_ENV;
 
         pte_t *pte;
         struct PageInfo *p = page_lookup(s_env->env_pgdir, srcva, &pte);
-        if (!p || ((perm & PTE_W) > 0 && (*pte & PTE_W) == 0))
+        if ((perm & PTE_W) && (*pte & PTE_W) == 0)
             return -E_INVAL;
 
         if (page_insert(d_env->env_pgdir, p, dstva, perm) < 0)
@@ -277,7 +280,7 @@ sys_page_unmap(envid_t envid, void *va)
 	// Hint: This function is a wrapper around page_remove().
 
 	// LAB 4: Your code here.
-        if (va >= (void *) UTOP || ROUNDUP(va, PGSIZE) != va)
+        if ((uintptr_t)va >= UTOP || PGOFF(va))
             return -E_INVAL;
 
         struct Env *env;
