@@ -36,22 +36,24 @@ pgfault(struct UTrapframe *utf)
 
 	//panic("pgfault not implemented");
         
-        if ((err & FEC_WR) == 0 ||
-            (uvpd[PDX(addr)] & PTE_P) == 0 ||
-            (uvpt[PTX(addr)] & PTE_COW) == 0 )
+        if ((err & FEC_WR) == 0 || (uvpt[PGNUM(addr)] & PTE_COW) == 0)
             panic("Error. pgfault() not a write or attempting to access a non-cow page.");
+
+        envid_t envid = sys_getenvid();
 
         if ((r = sys_page_alloc(0, (void*) PFTEMP, PTE_U|PTE_P|PTE_W)) < 0)
             panic("Error. pgfault() page_allocation on temp memeory failed %e", r);
 
         addr = ROUNDDOWN(addr, PGSIZE);
-
         memmove(PFTEMP, addr, PGSIZE);
+        
+        if ((r = sys_page_unmap(envid, addr)) < 0)
+            panic("Error, pgfault() unmap addr memory failed. %e", r);
 
-        if ((r = sys_page_map(0, PFTEMP, 0, addr, PTE_U|PTE_P|PTE_W)) < 0)
+        if ((r = sys_page_map(envid, PFTEMP, envid, addr, PTE_U|PTE_P|PTE_W)) < 0)
             panic("Error, pgfault() page mapping failed %e", r);
 
-        if ((r = sys_page_unmap(0, PFTEMP)) < 0)
+        if ((r = sys_page_unmap(envid, PFTEMP)) < 0)
             panic("Error, pgfault() unmap temp memory failed. %e", r);
 }
 
@@ -74,18 +76,23 @@ duppage(envid_t envid, unsigned pn)
 	// LAB 4: Your code here.
 	//panic("duppage not implemented");
         
-        void *addr = (void*) ((uintptr_t) pn * PGSIZE);
-        pte_t pte = uvpt[PTX(addr)];
+        void *addr = (void*) ((uint32_t) pn * PGSIZE);
+        pte_t pte = uvpt[pn];
+        int perm = PTE_P | PTE_U;
 
-        if ((pte & PTE_W) > 0 || (pte & PTE_COW) > 0) {
-            if ((r = sys_page_map(0, addr, envid, addr, PTE_U|PTE_P|PTE_COW)) < 0 )
+        if ((pte & PTE_W) || (pte & PTE_COW)) 
+            perm |= PTE_COW;
+        
+        if ((r = sys_page_map(thisenv->env_id, addr, envid, addr, perm)) < 0 ){
+            panic("duppage, page re-mapping failed, %e ", r);
+            return r;
+        }
+        
+        if (perm & PTE_COW) {
+            if ((r = sys_page_map(thisenv->env_id, addr, thisenv->env_id,  addr, perm)) < 0 ) {
                 panic("duppage, page re-mapping failed, %e ", r);
-
-            if ((r = sys_page_map(0, addr, 0, addr, PTE_U|PTE_P|PTE_COW)) < 0 )
-                panic("duppage, page re-mapping failed, %e ", r);
-        } else {
-            if ((r = sys_page_map(0, addr, envid, addr, PTE_U|PTE_P)) < 0 )
-                panic("duppage, page re-mapping failed, %e ", r);
+                return r;
+            }
         }
 
 	return 0;
@@ -119,31 +126,34 @@ fork(void)
         // create a child
         envid_t child_env_id = sys_exofork();
         
-        if (child_env_id < 0)
+        if (child_env_id < 0) {
             panic("Failed to create a child process %e", child_env_id);
+            return child_env_id;
+        }
 
         if (child_env_id == 0) {
+            // a child process
             thisenv = &envs[ENVX(sys_getenvid())];
             return 0;
         }
 
         // we are the parent
-        uintptr_t addr;
-        for (addr = UTEXT; addr < UTOP - PGSIZE; addr += PGSIZE) {
-            if ((uvpd[PDX(addr)] & PTE_P) > 0 &&
-                (uvpt[PTX(addr)] & PTE_P) > 0 &&
-                (uvpt[PTX(addr)] & PTE_U) > 0)
-                duppage(child_env_id, PTX(addr));
+        size_t pn;
+        int r;
+        for (pn = PGNUM(UTEXT); pn < PGNUM(USTACKTOP); pn++) {
+            if ((uvpd[pn>>10] & PTE_P) && (uvpt[pn] & PTE_P)) 
+                if ((r = duppage(child_env_id, pn)) < 0)
+                    return r;
         }
         
-        int r;
-        if ((r = sys_page_alloc(child_env_id, (void*)(UTOP-PGSIZE), PTE_U|PTE_W|PTE_P)) < 0)
+        if ((r = sys_page_alloc(child_env_id, (void*)(UXSTACKTOP-PGSIZE), PTE_U|PTE_W|PTE_P)) < 0){
             panic("fork, page_allocation for exception stak fail, %e", r);
-
+            return r;
+        }
 
         extern void _pgfault_upcall(void);
-
-        sys_env_set_pgfault_upcall(child_env_id, _pgfault_upcall);
+        if ((r = sys_env_set_pgfault_upcall(child_env_id, _pgfault_upcall))< 0)
+            return r;
 
         // start the child env
         if ((r = sys_env_set_status(child_env_id, ENV_RUNNABLE)) < 0)
