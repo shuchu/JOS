@@ -91,27 +91,39 @@ trap_init(void)
         extern void rt_mchk();
         extern void rt_simderr();
         extern void rt_syscall();
-        extern void rt_default();
+        extern void rt_timer();
+        extern void rt_kbd();
+        extern void rt_serial();
+        extern void rt_spurious();
+        extern void rt_ide();
+        extern void rt_error();
 
-        SETGATE(idt[T_DIVIDE], true, GD_KT, rt_divide, 0);
-        SETGATE(idt[T_DEBUG], true, GD_KT, rt_debug, 0);
-        SETGATE(idt[T_NMI], false, GD_KT, rt_nmi, 0);  // an interrupt
-        SETGATE(idt[T_BRKPT], true, GD_KT, rt_brkpt, 3);
-        SETGATE(idt[T_OFLOW], true, GD_KT, rt_oflow, 0);
-        SETGATE(idt[T_BOUND], true, GD_KT, rt_bound, 0);
-        SETGATE(idt[T_ILLOP], true, GD_KT, rt_illop, 0);
-        SETGATE(idt[T_DEVICE], true, GD_KT, rt_device, 0);
-        SETGATE(idt[T_DBLFLT], false, GD_KT, rt_dblflt, 0);
-        SETGATE(idt[T_TSS], true, GD_KT, rt_tss, 0);
-        SETGATE(idt[T_SEGNP], true, GD_KT, rt_segnp, 0);
-        SETGATE(idt[T_STACK], true, GD_KT, rt_stack, 0);
-        SETGATE(idt[T_GPFLT], true, GD_KT, rt_gpflt, 0);
-        SETGATE(idt[T_PGFLT], true, GD_KT, rt_pgflt, 0);
-        SETGATE(idt[T_FPERR], true, GD_KT, rt_fperr, 0);
-        SETGATE(idt[T_ALIGN], true, GD_KT, rt_align, 0);
-        SETGATE(idt[T_MCHK], false, GD_KT, rt_mchk, 0);
-        SETGATE(idt[T_SIMDERR], true, GD_KT, rt_simderr, 0);
-        SETGATE(idt[T_SYSCALL], true, GD_KT, rt_syscall, 3);
+        SETGATE(idt[T_DIVIDE], 0, GD_KT, rt_divide, 0);
+        SETGATE(idt[T_DEBUG], 0, GD_KT, rt_debug, 0);
+        SETGATE(idt[T_NMI], 0, GD_KT, rt_nmi, 0);  // an interrupt
+        SETGATE(idt[T_BRKPT], 0, GD_KT, rt_brkpt, 3);
+        SETGATE(idt[T_OFLOW], 0, GD_KT, rt_oflow, 0);
+        SETGATE(idt[T_BOUND], 0, GD_KT, rt_bound, 0);
+        SETGATE(idt[T_ILLOP], 0, GD_KT, rt_illop, 0);
+        SETGATE(idt[T_DEVICE], 0, GD_KT, rt_device, 0);
+        SETGATE(idt[T_DBLFLT], 0, GD_KT, rt_dblflt, 0);
+        SETGATE(idt[T_TSS], 0, GD_KT, rt_tss, 0);
+        SETGATE(idt[T_SEGNP], 0, GD_KT, rt_segnp, 0);
+        SETGATE(idt[T_STACK], 0, GD_KT, rt_stack, 0);
+        SETGATE(idt[T_GPFLT], 0, GD_KT, rt_gpflt, 0);
+        SETGATE(idt[T_PGFLT], 0, GD_KT, rt_pgflt, 0);
+        SETGATE(idt[T_FPERR], 0, GD_KT, rt_fperr, 0);
+        SETGATE(idt[T_ALIGN], 0, GD_KT, rt_align, 0);
+        SETGATE(idt[T_MCHK], 0, GD_KT, rt_mchk, 0);
+        SETGATE(idt[T_SIMDERR], 0, GD_KT, rt_simderr, 0);
+        SETGATE(idt[T_SYSCALL], 0, GD_KT, rt_syscall, 3);
+        //IRQ
+        SETGATE(idt[IRQ_OFFSET+IRQ_TIMER], 0, GD_KT, rt_timer, 0);
+        SETGATE(idt[IRQ_OFFSET+IRQ_KBD], 0, GD_KT, rt_kbd, 0);
+        SETGATE(idt[IRQ_OFFSET+IRQ_SERIAL], 0, GD_KT, rt_serial, 0);
+        SETGATE(idt[IRQ_OFFSET+IRQ_SPURIOUS], 0, GD_KT, rt_spurious, 0);
+        SETGATE(idt[IRQ_OFFSET+IRQ_IDE], 0, GD_KT, rt_ide, 0);
+        SETGATE(idt[IRQ_OFFSET+IRQ_ERROR], 0, GD_KT, rt_error, 0);
 
 	// Per-CPU setup 
 	trap_init_percpu();
@@ -230,9 +242,9 @@ trap_dispatch(struct Trapframe *tf)
                                 tf->tf_regs.reg_ebx,
                                 tf->tf_regs.reg_edi,
                                 tf->tf_regs.reg_esi);
-            if (result < 0) {
-                panic("trao dispatch, the system call number is invalid.");
-            }
+            //if (result < 0) {
+            //    panic("trao dispatch, the system call number is invalid.");
+            //}
 
             tf->tf_regs.reg_eax = result;
             return;
@@ -251,6 +263,11 @@ trap_dispatch(struct Trapframe *tf)
 	// Handle clock interrupts. Don't forget to acknowledge the
 	// interrupt using lapic_eoi() before calling the scheduler!
 	// LAB 4: Your code here.
+        if (tf->tf_trapno == IRQ_OFFSET + IRQ_TIMER) {
+            lapic_eoi();
+            sched_yield();
+            return;
+        }
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);

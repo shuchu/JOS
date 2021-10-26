@@ -45,10 +45,10 @@ pgfault(struct UTrapframe *utf)
             panic("Error. pgfault() page_allocation on temp memeory failed %e", r);
 
         addr = ROUNDDOWN(addr, PGSIZE);
-        memmove(PFTEMP, addr, PGSIZE);
+        memcpy((void*)PFTEMP, (void*)addr, PGSIZE);
         
-        if ((r = sys_page_unmap(envid, addr)) < 0)
-            panic("Error, pgfault() unmap addr memory failed. %e", r);
+        //if ((r = sys_page_unmap(envid, addr)) < 0)
+        //    panic("Error, pgfault() unmap addr memory failed. %e", r);
 
         if ((r = sys_page_map(envid, PFTEMP, envid, addr, PTE_U|PTE_P|PTE_W)) < 0)
             panic("Error, pgfault() page mapping failed %e", r);

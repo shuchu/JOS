@@ -333,7 +333,50 @@ static int
 sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 {
 	// LAB 4: Your code here.
-	panic("sys_ipc_try_send not implemented");
+	//panic("sys_ipc_try_send not implemented");
+        int r;
+        pte_t *pte;
+        struct PageInfo *pp;
+        struct Env *env;  // env according to envid
+
+        if ((r = envid2env(envid, &env, 0)) < 0)
+            return -E_BAD_ENV;
+        if (env->env_ipc_recving != 1 || env->env_ipc_from != 0)
+            return -E_IPC_NOT_RECV;     
+        if (srcva < (void *)UTOP && PGOFF(srcva)){
+            return -E_INVAL;
+        }
+        if (srcva < (void *)UTOP){
+            if ((perm & PTE_P) == 0 || (perm & PTE_U) == 0){
+                return -E_INVAL;
+            }
+            if ((perm & ~(PTE_SYSCALL)) != 0) {
+                return -E_INVAL;
+            }
+        }
+        if (srcva < (void *)UTOP && 
+            (pp = page_lookup(curenv->env_pgdir, srcva, &pte)) == NULL){
+            return -E_INVAL;
+         }
+
+        if (srcva < (void *)UTOP && (perm & PTE_W) && !(*pte & PTE_W)){
+            return -E_INVAL;
+        }
+        if (srcva < (void *)UTOP && env->env_ipc_dstva != 0){
+            if ((r = page_insert(env->env_pgdir, pp, env->env_ipc_dstva, perm)) < 0)
+                return -E_NO_MEM;
+            env->env_ipc_perm = perm;
+        } else
+            env->env_ipc_perm = 0;
+        
+        env->env_ipc_from = curenv->env_id;
+        env->env_ipc_recving = false;
+        env->env_ipc_value = value;
+        env->env_status = ENV_RUNNABLE;
+        // return value
+        env->env_tf.tf_regs.reg_eax=0;
+        return 0;
+
 }
 
 // Block until a value is ready.  Record that you want to receive
@@ -351,7 +394,15 @@ static int
 sys_ipc_recv(void *dstva)
 {
 	// LAB 4: Your code here.
-	panic("sys_ipc_recv not implemented");
+	//panic("sys_ipc_recv not implemented");
+        if (dstva < (void*) UTOP && PGOFF(dstva))
+            return -E_INVAL;
+
+        curenv->env_ipc_recving = true;
+        curenv->env_ipc_dstva = dstva;
+        curenv->env_status = ENV_NOT_RUNNABLE;
+        curenv->env_ipc_from = 0;
+        sched_yield();
 	return 0;
 }
 
@@ -376,7 +427,7 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
                 return sys_env_destroy((envid_t) a1);
             case SYS_yield:
                 sys_yield();
-                return 0;
+                break;
             case SYS_exofork:
                 return sys_exofork();
             case SYS_env_set_status:
@@ -390,8 +441,10 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
                         (envid_t)a3, (void *)a4, (int)a5);
             case SYS_page_unmap:
                 return sys_page_unmap((envid_t)a1, (void *)a2);
-
-
+            case SYS_ipc_recv:
+                return sys_ipc_recv((void *) a1);
+            case SYS_ipc_try_send:
+                return sys_ipc_try_send((envid_t) a1, a2, (void *) a3, a4);
             default:
                 return -E_INVAL;
         }
