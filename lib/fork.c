@@ -34,7 +34,27 @@ pgfault(struct UTrapframe *utf)
 
 	// LAB 4: Your code here.
 
-	panic("pgfault not implemented");
+	//panic("pgfault not implemented");
+        
+        if ((err & FEC_WR) == 0 || (uvpt[PGNUM(addr)] & PTE_COW) == 0)
+            panic("Error. pgfault() not a write or attempting to access a non-cow page.");
+
+        envid_t envid = sys_getenvid();
+
+        if ((r = sys_page_alloc(0, (void*) PFTEMP, PTE_U|PTE_P|PTE_W)) < 0)
+            panic("Error. pgfault() page_allocation on temp memeory failed %e", r);
+
+        addr = ROUNDDOWN(addr, PGSIZE);
+        memcpy((void*)PFTEMP, (void*)addr, PGSIZE);
+        
+        //if ((r = sys_page_unmap(envid, addr)) < 0)
+        //    panic("Error, pgfault() unmap addr memory failed. %e", r);
+
+        if ((r = sys_page_map(envid, PFTEMP, envid, addr, PTE_U|PTE_P|PTE_W)) < 0)
+            panic("Error, pgfault() page mapping failed %e", r);
+
+        if ((r = sys_page_unmap(envid, PFTEMP)) < 0)
+            panic("Error, pgfault() unmap temp memory failed. %e", r);
 }
 
 //
@@ -54,7 +74,35 @@ duppage(envid_t envid, unsigned pn)
 	int r;
 
 	// LAB 4: Your code here.
-	panic("duppage not implemented");
+	//panic("duppage not implemented");
+        
+        void *addr = (void*) ((uint32_t) pn * PGSIZE);
+        pte_t pte = uvpt[pn];
+
+        if (pte & PTE_SHARE) {
+            if ((r = sys_page_map(sys_getenvid(), addr, envid, addr, pte & PTE_SYSCALL)) < 0) {
+                panic("duppage: page mapping failed %e", r);
+                return r;
+            }
+        } else {
+            int perm = PTE_P | PTE_U;
+
+            if ((pte & PTE_W) || (pte & PTE_COW)) 
+                perm |= PTE_COW;
+        
+            if ((r = sys_page_map(thisenv->env_id, addr, envid, addr, perm)) < 0 ){
+                panic("duppage, page re-mapping failed, %e ", r);
+                return r;
+            }
+        
+            if (perm & PTE_COW) {
+                if ((r = sys_page_map(thisenv->env_id, addr, thisenv->env_id,  addr, perm)) < 0 ) {
+                    panic("duppage, page re-mapping failed, %e ", r);
+                    return r;
+                }
+            }
+        }
+
 	return 0;
 }
 
@@ -78,7 +126,48 @@ envid_t
 fork(void)
 {
 	// LAB 4: Your code here.
-	panic("fork not implemented");
+	//panic("fork not implemented");
+
+        // set pgfault handler
+        set_pgfault_handler(pgfault);
+
+        // create a child
+        envid_t child_env_id = sys_exofork();
+        
+        if (child_env_id < 0) {
+            panic("Failed to create a child process %e", child_env_id);
+            return child_env_id;
+        }
+
+        if (child_env_id == 0) {
+            // a child process
+            thisenv = &envs[ENVX(sys_getenvid())];
+            return 0;
+        }
+
+        // we are the parent
+        size_t pn;
+        int r;
+        for (pn = PGNUM(UTEXT); pn < PGNUM(USTACKTOP); pn++) {
+            if ((uvpd[pn>>10] & PTE_P) && (uvpt[pn] & PTE_P)) 
+                if ((r = duppage(child_env_id, pn)) < 0)
+                    return r;
+        }
+        
+        if ((r = sys_page_alloc(child_env_id, (void*)(UXSTACKTOP-PGSIZE), PTE_U|PTE_W|PTE_P)) < 0){
+            panic("fork, page_allocation for exception stak fail, %e", r);
+            return r;
+        }
+
+        extern void _pgfault_upcall(void);
+        if ((r = sys_env_set_pgfault_upcall(child_env_id, _pgfault_upcall))< 0)
+            return r;
+
+        // start the child env
+        if ((r = sys_env_set_status(child_env_id, ENV_RUNNABLE)) < 0)
+            panic("for, set child env to be runnable fail, %e", r);
+
+        return child_env_id;
 }
 
 // Challenge!
